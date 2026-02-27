@@ -119,6 +119,16 @@ export interface IRLayout {
     wrap: boolean;
 }
 
+export interface IRConstraints {
+    horizontal: 'MIN' | 'CENTER' | 'MAX' | 'STRETCH' | 'SCALE';
+    vertical: 'MIN' | 'CENTER' | 'MAX' | 'STRETCH' | 'SCALE';
+}
+
+export interface IRAbsolutePosition {
+    x: number;
+    y: number;
+}
+
 export interface IRNode {
     id: string;
     name: string;
@@ -136,6 +146,11 @@ export interface IRNode {
     // Layout
     layout: IRLayout;
     dimensions: IRDimensions;
+
+    // Positioning (for non-auto-layout children)
+    position?: 'relative' | 'absolute';
+    absolutePosition?: IRAbsolutePosition;
+    constraints?: IRConstraints;
 
     // Text
     textContent?: string;

@@ -29,7 +29,7 @@ export class FigmaParserService {
         return {
             fileName: response.name,
             lastModified: response.lastModified,
-            rootNode: this.parseNode(nodeData.document),
+            rootNode: this.parseNode(nodeData.document, undefined, { x: 0, y: 0 }),
             componentMap,
         };
     }
@@ -37,9 +37,24 @@ export class FigmaParserService {
     /**
      * Recursively parse a FigmaNode into an IRNode.
      */
-    private parseNode(node: FigmaNode): IRNode {
+    private parseNode(node: FigmaNode, parentLayoutMode?: string, parentBox?: { x: number, y: number }): IRNode {
         const componentType = this.classifyComponent(node);
         const isInteractive = this.isInteractiveComponent(componentType);
+
+        // Determine if this node is absolutely positioned
+        // A node is absolute when its parent has NO auto layout (layoutMode is NONE or undefined)
+        const isAbsolute = parentLayoutMode === 'NONE' || parentLayoutMode === undefined;
+        const hasAbsoluteBox = isAbsolute && node.absoluteBoundingBox != null;
+
+        // Parse constraints from Figma
+        const constraints = node.constraints ? {
+            horizontal: node.constraints.horizontal as 'MIN' | 'CENTER' | 'MAX' | 'STRETCH' | 'SCALE',
+            vertical: node.constraints.vertical as 'MIN' | 'CENTER' | 'MAX' | 'STRETCH' | 'SCALE',
+        } : undefined;
+
+        // Determine layout mode of this node to pass to children
+        const thisLayoutMode = node.layoutMode ?? 'NONE';
+        const thisBox = node.absoluteBoundingBox ? { x: node.absoluteBoundingBox.x, y: node.absoluteBoundingBox.y } : parentBox;
 
         return {
             id: node.id,
@@ -59,6 +74,14 @@ export class FigmaParserService {
             layout: parseLayout(node),
             dimensions: this.parseDimensions(node),
 
+            // Positioning
+            position: hasAbsoluteBox ? 'absolute' : undefined,
+            absolutePosition: hasAbsoluteBox ? {
+                x: Math.round(node.absoluteBoundingBox!.x - (parentBox?.x || 0)),
+                y: Math.round(node.absoluteBoundingBox!.y - (parentBox?.y || 0)),
+            } : undefined,
+            constraints,
+
             // Text
             textContent: node.characters,
             textStyle: node.style ? this.parseTextStyle(node) : undefined,
@@ -67,10 +90,10 @@ export class FigmaParserService {
             isInteractive,
             interactivityHint: this.getInteractivityHint(componentType),
 
-            // Children
+            // Children — pass this node's layout mode
             children: (node.children ?? [])
                 .filter((child) => child.visible !== false)
-                .map((child) => this.parseNode(child)),
+                .map((child) => this.parseNode(child, thisLayoutMode, thisBox)),
         };
     }
 

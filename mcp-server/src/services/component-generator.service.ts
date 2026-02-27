@@ -6,13 +6,17 @@ import { getShadcnReactMapping, getAllShadcnReactImports, type ShadcnMapping } f
 import { getShadcnVueMapping, getAllShadcnVueImports } from '../mappers/shadcn-vue.mapper.js';
 import { getSpartanMapping, getAllSpartanImports } from '../mappers/spartan-angular.mapper.js';
 import { layoutToTailwindClasses, spacingToTailwind } from '../utils/layout.utils.js';
-import { fillsToTailwindClasses, irColorToTailwind } from '../utils/color.utils.js';
+import { fillsToTailwindClasses, irColorToTailwind, irColorToCssVar } from '../utils/color.utils.js';
 import { generateResponsiveOverrides, mergeWithResponsive, shouldStackOnMobile } from '../utils/responsive.utils.js';
+import type { TokenMap } from './design-tokens.service.js';
 
 export class ComponentGeneratorService {
 
-    generate(rootNode: IRNode, framework: Framework, componentName?: string): string {
+    private tokenMap?: TokenMap;
+
+    generate(rootNode: IRNode, framework: Framework, componentName?: string, tokenMap?: TokenMap): string {
         const name = componentName ?? this.toPascalCase(rootNode.name);
+        this.tokenMap = tokenMap;
 
         switch (framework) {
             case 'react':
@@ -345,10 +349,41 @@ export class ${name}Component {}
         if (node.dimensions.minWidth) classes.push(`min-w-[${Math.round(node.dimensions.minWidth)}px]`);
         if (node.dimensions.maxWidth) classes.push(`max-w-[${Math.round(node.dimensions.maxWidth)}px]`);
 
+        // Absolute positioning
+        if (node.position === 'absolute' && node.absolutePosition) {
+            classes.push('absolute');
+            classes.push(`top-[${node.absolutePosition.y}px]`);
+            classes.push(`left-[${node.absolutePosition.x}px]`);
+        }
+
+        // If any child is absolute, this container must be relative
+        const hasAbsoluteChildren = node.children.some(c => c.position === 'absolute');
+        if (hasAbsoluteChildren) {
+            classes.push('relative');
+        }
+
+        // Fixed dimensions for non-auto/fill nodes
+        if (typeof node.dimensions.width === 'number' && node.dimensions.width > 0) {
+            const w = Math.round(node.dimensions.width);
+            if (w > 300) {
+                classes.push('w-full', `max-w-[${w}px]`);
+            } else {
+                classes.push(`w-[${w}px]`);
+            }
+        }
+        if (typeof node.dimensions.height === 'number' && node.dimensions.height > 0) {
+            const h = Math.round(node.dimensions.height);
+            if (h > 100 && node.componentType !== 'image') {
+                classes.push('h-fit', `min-h-[${h}px]`);
+            } else {
+                classes.push(`h-[${h}px]`);
+            }
+        }
+
         // Background fills — skip for text nodes (they use text-color instead)
         const isTextLike = node.componentType === 'text' || node.componentType === 'icon';
         if (!isTextLike) {
-            classes.push(...fillsToTailwindClasses(node.fills));
+            classes.push(...fillsToTailwindClasses(node.fills, this.tokenMap));
         }
 
         // Borders
@@ -356,7 +391,11 @@ export class ${name}Component {}
             const b = node.borders[0];
             classes.push('border');
             if (b.width > 1) classes.push(`border-[${b.width}px]`);
-            classes.push(irColorToTailwind(b.color, 'border'));
+            if (this.tokenMap) {
+                classes.push(irColorToCssVar(b.color, this.tokenMap, 'border'));
+            } else {
+                classes.push(irColorToTailwind(b.color, 'border'));
+            }
         }
 
         // Border radius
@@ -443,7 +482,11 @@ export class ${name}Component {}
 
         // Text color from fills
         if (node.fills.length > 0 && node.fills[0].type === 'solid' && node.fills[0].color) {
-            classes.push(irColorToTailwind(node.fills[0].color, 'text'));
+            if (this.tokenMap) {
+                classes.push(irColorToCssVar(node.fills[0].color, this.tokenMap, 'text'));
+            } else {
+                classes.push(irColorToTailwind(node.fills[0].color, 'text'));
+            }
         }
 
         return classes;

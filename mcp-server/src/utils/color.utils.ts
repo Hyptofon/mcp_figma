@@ -116,22 +116,61 @@ export function figmaFillToIR(fill: FigmaFill): IRFill | null {
 }
 
 /** Generate Tailwind background classes from IR fills */
-export function fillsToTailwindClasses(fills: IRFill[]): string[] {
+export function fillsToTailwindClasses(fills: IRFill[], tokenMap?: Map<string, string>): string[] {
     const classes: string[] = [];
 
     for (const fill of fills) {
         if (fill.type === 'solid' && fill.color) {
-            classes.push(irColorToTailwind(fill.color, 'bg'));
+            if (tokenMap) {
+                classes.push(irColorToCssVar(fill.color, tokenMap, 'bg'));
+            } else {
+                classes.push(irColorToTailwind(fill.color, 'bg'));
+            }
         } else if (fill.type === 'gradient-linear' && fill.gradientStops?.length) {
-            const from = irColorToTailwind(fill.gradientStops[0].color, 'from');
-            const to = irColorToTailwind(fill.gradientStops[fill.gradientStops.length - 1].color, 'to');
-            classes.push('bg-gradient-to-r', from, to);
-            if (fill.gradientStops.length > 2) {
-                const via = irColorToTailwind(fill.gradientStops[1].color, 'via');
-                classes.push(via);
+            // Gradients: use Tailwind gradient classes (CSS vars for stops)
+            if (tokenMap) {
+                const from = irColorToCssVar(fill.gradientStops[0].color, tokenMap, 'from');
+                const to = irColorToCssVar(fill.gradientStops[fill.gradientStops.length - 1].color, tokenMap, 'to');
+                classes.push('bg-gradient-to-r', from, to);
+                if (fill.gradientStops.length > 2) {
+                    const via = irColorToCssVar(fill.gradientStops[1].color, tokenMap, 'via');
+                    classes.push(via);
+                }
+            } else {
+                const from = irColorToTailwind(fill.gradientStops[0].color, 'from');
+                const to = irColorToTailwind(fill.gradientStops[fill.gradientStops.length - 1].color, 'to');
+                classes.push('bg-gradient-to-r', from, to);
+                if (fill.gradientStops.length > 2) {
+                    const via = irColorToTailwind(fill.gradientStops[1].color, 'via');
+                    classes.push(via);
+                }
             }
         }
     }
 
     return classes;
 }
+
+// ─── CSS Variable-based color functions ───
+
+/**
+ * Convert IRColor to a Tailwind class that uses a CSS variable from the token map.
+ * Falls back to irColorToTailwind if no match in the token map.
+ */
+export function irColorToCssVar(
+    color: IRColor,
+    tokenMap: Map<string, string>,
+    prefix: 'bg' | 'text' | 'border' | 'from' | 'to' | 'via' = 'bg',
+): string {
+    const hexClean = color.hex.replace('#', '').toLowerCase();
+    const varName = tokenMap.get(hexClean);
+
+    if (varName) {
+        const opacity = color.a < 1 ? `/${Math.round(color.a * 100)}` : '';
+        return `${prefix}-[var(${varName})]${opacity}`;
+    }
+
+    // Fallback: no token found, use standard Tailwind conversion
+    return irColorToTailwind(color, prefix);
+}
+
